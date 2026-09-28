@@ -1,23 +1,13 @@
--- ============================================================
--- YBA PROXIMITY HOOK
--- ============================================================
-print("[HOOK] Запуск хука ProximityPrompt...")
-
-local oldFireProximityPrompt = fireproximityprompt
-
-if oldFireProximityPrompt then
-    fireproximityprompt = function(prompt, ...)
-        if prompt and prompt:IsA("ProximityPrompt") then
-            print("[HOOK] >>> Вызван fireproximityprompt!")
-            print("[HOOK] Объект: " .. prompt:GetFullName())
-            print("[HOOK] ObjectText: " .. prompt.ObjectText)
-            print("[HOOK] ActionText: " .. prompt.ActionText)
-            print("[HOOK] Родитель: " .. tostring(prompt.Parent))
-            print("[HOOK] ------------------------")
+print("--- ПОИСК ПРЕДМЕТОВ ---")
+local found = false
+for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
+    if obj:IsA("ProximityPrompt") then
+        -- Ищем все подсказки, которые относятся к предметам
+        if obj.ObjectText ~= "" and obj.ActionText ~= "" then
+            print("Найден предмет: [" .. obj.ObjectText .. "] | Действие: [" .. obj.ActionText .. "] | Путь: " .. obj:GetFullName())
+            found = true
         end
-        return oldFireProximityPrompt(prompt, ...)
     end
-    print("[HOOK] Хук установлен. ТЕПЕРЬ продайте предмет торговцу вручную!")
-else
-    print("[HOOK] Ошибка: fireproximityprompt недоступен в этом исполнителе.")
 end
+if not found then print("Предметы не найдены. Убедитесь, что вы стоите рядом с ними.") end
+print("--- КОНЕЦ ---")
