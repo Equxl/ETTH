@@ -1,7 +1,7 @@
 -- ============================================================
 -- ========== 1. ЗАГРУЗКА KAVO UI =============================
 -- ============================================================
-print("[YBA Controller] Загрузка v3.0 (Filtered)...")
+print("[YBA Controller] Загрузка v4.1 (Fixed Sell & ESP)...")
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
 
 -- ============================================================
@@ -58,24 +58,20 @@ pcall(function()
 end)
 
 -- ============================================================
--- ========== 4. ФИЛЬТР ПРЕДМЕТОВ (ВАЖНО!) ====================
+-- ========== 4. ФИЛЬТР ПРЕДМЕТОВ (ОСЛАБЛЕН) ==================
 -- ============================================================
--- Проверяет, является ли объект реальным предметом для подбора
 local function isValidItem(obj)
     if not obj then return false end
-
-    -- Если это Tool (например, предмет в инвентаре или на земле)
     if obj:IsA("Tool") then return true end
-
-    -- Если это часть (BasePart)
     if obj:IsA("BasePart") then
-        -- Карта обычно Anchored = true, предметы — нет
-        if obj.Anchored then return false end
-        -- У предметов для подбора всегда есть ProximityPrompt
-        if not obj:FindFirstChildOfClass("ProximityPrompt") then return false end
+        if obj.Size.Magnitude > 50 then return false end
         return true
     end
-
+    if obj:IsA("Model") then
+        if obj.PrimaryPart or obj:FindFirstChildOfClass("BasePart") then
+            return true
+        end
+    end
     return false
 end
 
@@ -88,10 +84,8 @@ local function getPlayerMoney()
         local cash = leaderstats:FindFirstChild("Cash") or leaderstats:FindFirstChild("Money")
         if cash and cash:IsA("IntValue") then return cash.Value end
     end
-
     local attr = LocalPlayer:GetAttribute("Money") or LocalPlayer:GetAttribute("Cash")
     if typeof(attr) == "number" then return attr end
-
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
     if playerGui then
         local currency = playerGui:FindFirstChild("Currency")
@@ -105,7 +99,6 @@ local function getPlayerMoney()
             if moneyVal and moneyVal:IsA("IntValue") then return moneyVal.Value end
         end
     end
-
     local char = LocalPlayer.Character
     if char then
         local stats = char:FindFirstChild("Stats")
@@ -118,7 +111,32 @@ local function getPlayerMoney()
 end
 
 -- ============================================================
--- ========== 6. ПОИСК ПАПКИ С ПРЕДМЕТАМИ =====================
+-- ========== 6. ОТЛАДКА ======================================
+-- ============================================================
+local function debugNearbyObjects()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    print("=== Объекты в радиусе 50 studs ===")
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if (obj:IsA("BasePart") or obj:IsA("Model")) and obj ~= char then
+            local pos = nil
+            if obj:IsA("BasePart") then pos = obj.Position
+            elseif obj:IsA("Model") and obj.PrimaryPart then pos = obj.PrimaryPart.Position end
+            if pos and (pos - root.Position).Magnitude < 50 then
+                local anchored = "N/A"
+                if obj:IsA("BasePart") then anchored = tostring(obj.Anchored) end
+                print(obj.ClassName, "| Имя:", obj.Name, "| Anchored:", anchored)
+            end
+        end
+    end
+    print("===================================")
+end
+
+-- ============================================================
+-- ========== 7. ПОИСК ПАПКИ С ПРЕДМЕТАМИ =====================
 -- ============================================================
 local function getItemContainer()
     for _, name in ipairs(ITEM_FOLDERS) do
@@ -129,7 +147,7 @@ local function getItemContainer()
 end
 
 -- ============================================================
--- ========== 7. ESP ==========================================
+-- ========== 8. ESP ==========================================
 -- ============================================================
 local espObjects = {}
 
@@ -177,10 +195,14 @@ local function scanForItems()
     local container = getItemContainer() or Workspace
 
     for _, obj in ipairs(container:GetDescendants()) do
-        if isValidItem(obj) then -- Используем фильтр
+        if isValidItem(obj) then
             for _, itemName in ipairs(TARGET_ITEMS) do
                 if obj.Name:lower() == itemName:lower() then
-                    createESP(obj)
+                    if obj:IsA("BasePart") then
+                        createESP(obj)
+                    elseif obj:IsA("Model") and obj.PrimaryPart then
+                        createESP(obj.PrimaryPart)
+                    end
                     break
                 end
             end
@@ -197,7 +219,7 @@ local function cleanupESP()
 end
 
 -- ============================================================
--- ========== 8. NOCLIP =======================================
+-- ========== 9. NOCLIP =======================================
 -- ============================================================
 local noclipConnection = nil
 
@@ -232,7 +254,7 @@ local function stopNoclip()
 end
 
 -- ============================================================
--- ========== 9. SPEED ========================================
+-- ========== 10. SPEED =======================================
 -- ============================================================
 local function applySpeed()
     local char = LocalPlayer.Character
@@ -244,7 +266,7 @@ local function applySpeed()
 end
 
 -- ============================================================
--- ========== 10. ПРОДАЖА =====================================
+-- ========== 11. ПРОДАЖА (ИСПРАВЛЕНО) ========================
 -- ============================================================
 local function findSellRemote()
     local plr = LocalPlayer
@@ -287,38 +309,42 @@ local function sellItem(itemInstance)
     local remote = findSellRemote()
     if remote then
         pcall(function() remote:FireServer(unpack(args)) end)
-        task.wait(0.12)
+        task.wait(0.2) -- Увеличена задержка для безопасности
         return true
     end
     return false
 end
 
-local function autoSellFromBackpack()
+-- ИСПРАВЛЕНО: Теперь проверяет и Backpack, и Character (руки)
+local function autoSellItems()
     if not State.AutoSell then return end
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if not backpack then return end
-
-    for _, item in ipairs(backpack:GetChildren()) do
-        for _, targetName in ipairs(TARGET_ITEMS) do
-            if item.Name:lower() == targetName:lower() then
-                sellItem(item)
-                break
+    local containers = {
+        LocalPlayer:FindFirstChild("Backpack"),
+        LocalPlayer.Character
+    }
+    for _, container in ipairs(containers) do
+        if container then
+            for _, item in ipairs(container:GetChildren()) do
+                for _, targetName in ipairs(TARGET_ITEMS) do
+                    if item.Name:lower() == targetName:lower() then
+                        sellItem(item)
+                        break
+                    end
+                end
             end
         end
     end
 end
 
 -- ============================================================
--- ========== 11. АВТОПОКУПКА LUCKY ARROW =====================
+-- ========== 12. АВТОПОКУПКА LUCKY ARROW =====================
 -- ============================================================
 local function buyLuckyArrow()
     local char = LocalPlayer.Character
     if not char then return false end
-
     local money = getPlayerMoney()
     if money == nil then return false end
     if money < LUCKY_ARROW_PRICE then return false end
-
     local remote = char:FindFirstChild("RemoteEvent") or findSellRemote()
     if not remote then return false end
 
@@ -336,7 +362,7 @@ local function buyLuckyArrow()
 end
 
 -- ============================================================
--- ========== 12. AUTOFARM ====================================
+-- ========== 13. AUTOFARM ====================================
 -- ============================================================
 local function findNearestTargetItem()
     local char = LocalPlayer.Character
@@ -347,12 +373,17 @@ local function findNearestTargetItem()
     local container = getItemContainer() or Workspace
     local nearest, minDist = nil, math.huge
     for _, obj in ipairs(container:GetDescendants()) do
-        if isValidItem(obj) then -- Используем фильтр
+        if isValidItem(obj) then
             for _, name in ipairs(TARGET_ITEMS) do
                 if obj.Name:lower() == name:lower() then
-                    local dist = (obj.Position - root.Position).Magnitude
-                    if dist < minDist then
-                        nearest, minDist = obj, dist
+                    local pos = nil
+                    if obj:IsA("BasePart") then pos = obj.Position
+                    elseif obj:IsA("Model") and obj.PrimaryPart then pos = obj.PrimaryPart.Position end
+                    if pos then
+                        local dist = (pos - root.Position).Magnitude
+                        if dist < minDist then
+                            nearest, minDist = obj, dist
+                        end
                     end
                     break
                 end
@@ -398,7 +429,6 @@ local function startAutoFarm()
     if flyConnection then return end
     flyConnection = RunService.Heartbeat:Connect(function(dt)
         if not State.AutoFarm then return end
-
         local char = LocalPlayer.Character
         if not char then return end
         local root = char:FindFirstChild("HumanoidRootPart")
@@ -411,12 +441,13 @@ local function startAutoFarm()
         end
 
         local target = cachedTarget
-        if not target then
-            lastTargetName = nil
-            return
-        end
+        if not target then lastTargetName = nil; return end
 
-        local dist = (target.Position - root.Position).Magnitude
+        local targetPos = nil
+        if target:IsA("BasePart") then targetPos = target.Position
+        elseif target:IsA("Model") and target.PrimaryPart then targetPos = target.PrimaryPart.Position end
+        if not targetPos then return end
+        local dist = (targetPos - root.Position).Magnitude
 
         if target.Name ~= lastTargetName then
             lastTargetName = target.Name
@@ -431,7 +462,7 @@ local function startAutoFarm()
             return
         end
 
-        local dir = target.Position - root.Position
+        local dir = targetPos - root.Position
         local speed = State.FlySpeed
         local step = math.min(speed * dt, dist - (State.PickupRange - 0.5))
         if step > 0 then
@@ -458,7 +489,7 @@ local function stopAutoFarm()
 end
 
 -- ============================================================
--- ========== 13. ОБРАБОТКА РЕСПАВНА ==========================
+-- ========== 14. РЕСПАВН =====================================
 -- ============================================================
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
@@ -467,7 +498,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ============================================================
--- ========== 14. ОСНОВНЫЕ ЦИКЛЫ ==============================
+-- ========== 15. ЦИКЛЫ =======================================
 -- ============================================================
 task.spawn(function()
     while task.wait(State.ScanInterval) do
@@ -480,7 +511,7 @@ end)
 
 task.spawn(function()
     while task.wait(0.5) do
-        pcall(autoSellFromBackpack)
+        pcall(autoSellItems) -- Вызов обновленной функции
     end
 end)
 
@@ -493,31 +524,24 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- ========== 15. СОЗДАНИЕ GUI С KAVO UI ======================
+-- ========== 16. GUI С KAVO UI ===============================
 -- ============================================================
+local Window = Library.CreateLib("YBA Controller | v4.1", "BloodTheme")
 
-local Window = Library.CreateLib("YBA Controller | v3.0", "BloodTheme")
-
--- ----- Вкладка "AutoFarm" -----
 local FarmTab = Window:NewTab("AutoFarm")
 local FarmSection = FarmTab:NewSection("Автоматизация")
 
 FarmSection:NewToggle("★ AutoFarm", "Автоматический поиск и подбор предметов", function(state)
     State.AutoFarm = state
     if state then
-        if not State.Noclip then
-            State.Noclip = true
-            startNoclip()
-        end
+        if not State.Noclip then State.Noclip = true; startNoclip() end
         startAutoFarm()
-        print("[YBA AutoFarm] ВКЛЮЧЁН")
     else
         stopAutoFarm()
-        print("[YBA AutoFarm] ВЫКЛЮЧЕН")
     end
 end)
 
-FarmSection:NewToggle("Авто-продажа", "Продавать предметы из списка TARGET_ITEMS", function(state)
+FarmSection:NewToggle("Авто-продажа", "Продавать предметы из Backpack и рук", function(state)
     State.AutoSell = state
 end)
 
@@ -525,50 +549,34 @@ FarmSection:NewToggle("Авто-покупка Lucky Arrow", "Покупать L
     State.AutoBuyLucky = state
 end)
 
-FarmSection:NewSlider("Скорость полёта", "Скорость перемещения в AutoFarm", 200, 30, function(value)
-    State.FlySpeed = value
-end)
+FarmSection:NewSlider("Скорость полёта", "Скорость перемещения в AutoFarm", 200, 30, function(value) State.FlySpeed = value end)
+FarmSection:NewSlider("Дистанция подбора", "На каком расстоянии жать E", 10, 1, function(value) State.PickupRange = value end)
 
-FarmSection:NewSlider("Дистанция подбора", "На каком расстоянии жать E", 10, 1, function(value)
-    State.PickupRange = value
-end)
-
--- ----- Вкладка "Visuals" -----
 local VisualTab = Window:NewTab("Visuals")
 local VisualSection = VisualTab:NewSection("ESP")
-
 VisualSection:NewToggle("ESP предметов", "Подсвечивать предметы из списка", function(state)
     State.ESP = state
     if not state then clearAllESP() end
 end)
+VisualSection:NewSlider("Интервал сканирования", "Как часто сканировать мир (сек)", 10, 1, function(value) State.ScanInterval = value end)
 
-VisualSection:NewSlider("Интервал сканирования", "Как часто сканировать мир (сек)", 10, 1, function(value)
-    State.ScanInterval = value
-end)
-
--- ----- Вкладка "Movement" -----
 local MoveTab = Window:NewTab("Movement")
 local MoveSection = MoveTab:NewSection("Скорость и коллизии")
-
 MoveSection:NewToggle("Noclip", "Проход сквозь стены", function(state)
     State.Noclip = state
     if state then startNoclip() else stopNoclip() end
 end)
-
 MoveSection:NewToggle("Ускорение", "Увеличить скорость ходьбы", function(state)
     State.Speed = state
     applySpeed()
 end)
-
 MoveSection:NewSlider("Скорость ходьбы", "Значение WalkSpeed", 150, 16, function(value)
     State.WalkSpeed = value
     if State.Speed then applySpeed() end
 end)
 
--- ----- Вкладка "Items" -----
 local ItemsTab = Window:NewTab("Items")
 local ItemsSection = ItemsTab:NewSection("Выбор предметов для поиска")
-
 local allItems = {
     "Rokakaka", "Lucky Arrow", "Caesar's Headband", "Clackers",
     "Ancient Scroll", "Diamond", "Dio's Diary", "Gold Coin",
@@ -576,7 +584,6 @@ local allItems = {
     "Quinton's Glove", "Rib Cage of The Saint's Corpse",
     "Steel Ball", "Stone Mask", "Zeppeli's Hat",
 }
-
 ItemsSection:NewDropdown("Добавить предмет в поиск", "Выберите предмет из списка", allItems, function(selected)
     local alreadyExists = false
     for _, item in ipairs(TARGET_ITEMS) do
@@ -589,20 +596,20 @@ ItemsSection:NewDropdown("Добавить предмет в поиск", "Вы�
         print("[YBA] Предмет уже в списке: " .. selected)
     end
 end)
-
 ItemsSection:NewButton("Очистить список предметов", "Удалить все предметы из TARGET_ITEMS", function()
     table.clear(TARGET_ITEMS)
     clearAllESP()
     print("[YBA] Список TARGET_ITEMS очищен")
 end)
+ItemsSection:NewButton("🔍 Показать объекты рядом (Debug)", "Выводит в консоль имена объектов в радиусе 50 studs", function()
+    debugNearbyObjects()
+end)
 
--- ----- Вкладка "Info" -----
 local InfoTab = Window:NewTab("Info")
 local InfoSection = InfoTab:NewSection("О скрипте")
-
-InfoSection:NewLabel("YBA Controller v3.0 (Filtered)")
-InfoSection:NewLabel("Исправлен поиск: игнорируются объекты карты")
-InfoSection:NewLabel("Ищутся только объекты с ProximityPrompt")
+InfoSection:NewLabel("YBA Controller v4.1")
+InfoSection:NewLabel("Исправлена автопродажа (руки + Backpack)")
+InfoSection:NewLabel("Ослаблен фильтр ESP")
 InfoSection:NewLabel("Внимание: читы могут привести к бану!")
 
-print("[YBA Controller] v3.0 загружена. Фильтр предметов активен.")
+print("[YBA Controller] v4.1 загружена. Автопродажа исправлена.")
