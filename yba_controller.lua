@@ -7,13 +7,10 @@ local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHept
 -- ========== 2. НАСТРОЙКИ И СОСТОЯНИЕ ========================
 -- ============================================================
 local TARGET_ITEMS = {
-    -- Старые предметы (Arrow удалён)
     "Rokakaka",
     "Lucky Arrow",
     "Caesar's Headband",
     "Clackers",
-
-    -- Новые предметы
     "Ancient Scroll",
     "Diamond",
     "Dio's Diary",
@@ -25,11 +22,12 @@ local TARGET_ITEMS = {
     "Rib Cage of The Saint's Corpse",
     "Steel Ball",
     "Stone Mask",
-    "Zepellin's Headband",
     "Zeppeli's Hat",
 }
 
 local LUCKY_ARROW_PRICE = 75000
+
+local ITEM_FOLDERS = { "Items", "DroppedItems", "SpawnedItems", "Tools" }
 
 local State = {
     ESP = true,
@@ -39,9 +37,9 @@ local State = {
     AutoFarm = false,
     AutoBuyLucky = false,
     WalkSpeed = 30,
-    ScanInterval = 2,
-    FlySpeed = 120,
-    PickupRange = 3,
+    ScanInterval = 5,
+    FlySpeed = 80,
+    PickupRange = 5,
 }
 
 -- ============================================================
@@ -97,7 +95,18 @@ local function getPlayerMoney()
 end
 
 -- ============================================================
--- ========== 5. ESP ==========================================
+-- ========== 5. ПОИСК ПАПКИ С ПРЕДМЕТАМИ =====================
+-- ============================================================
+local function getItemContainer()
+    for _, name in ipairs(ITEM_FOLDERS) do
+        local folder = Workspace:FindFirstChild(name)
+        if folder then return folder end
+    end
+    return nil
+end
+
+-- ============================================================
+-- ========== 6. ESP ==========================================
 -- ============================================================
 local espObjects = {}
 
@@ -142,7 +151,9 @@ end
 
 local function scanForItems()
     if not State.ESP then return end
-    for _, obj in ipairs(Workspace:GetDescendants()) do
+    local container = getItemContainer() or Workspace
+
+    for _, obj in ipairs(container:GetDescendants()) do
         if obj:IsA("BasePart") then
             for _, itemName in ipairs(TARGET_ITEMS) do
                 if string.find(obj.Name:lower(), itemName:lower(), 1, true) then
@@ -163,7 +174,7 @@ local function cleanupESP()
 end
 
 -- ============================================================
--- ========== 6. NOCLIP =======================================
+-- ========== 7. NOCLIP =======================================
 -- ============================================================
 local noclipConnection = nil
 
@@ -198,7 +209,7 @@ local function stopNoclip()
 end
 
 -- ============================================================
--- ========== 7. SPEED ========================================
+-- ========== 8. SPEED ========================================
 -- ============================================================
 local function applySpeed()
     local char = LocalPlayer.Character
@@ -210,7 +221,7 @@ local function applySpeed()
 end
 
 -- ============================================================
--- ========== 8. ПРОДАЖА ======================================
+-- ========== 9. ПРОДАЖА ======================================
 -- ============================================================
 local function findSellRemote()
     local plr = LocalPlayer
@@ -275,7 +286,7 @@ local function autoSellFromBackpack()
 end
 
 -- ============================================================
--- ========== 9. АВТОПОКУПКА LUCKY ARROW ======================
+-- ========== 10. АВТОПОКУПКА LUCKY ARROW =====================
 -- ============================================================
 local function buyLuckyArrow()
     local char = LocalPlayer.Character
@@ -302,7 +313,7 @@ local function buyLuckyArrow()
 end
 
 -- ============================================================
--- ========== 10. AUTOFARM ====================================
+-- ========== 11. AUTOFARM (ОПТИМИЗИРОВАННЫЙ) =================
 -- ============================================================
 local function findNearestTargetItem()
     local char = LocalPlayer.Character
@@ -310,8 +321,9 @@ local function findNearestTargetItem()
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return nil end
 
+    local container = getItemContainer() or Workspace
     local nearest, minDist = nil, math.huge
-    for _, obj in ipairs(Workspace:GetDescendants()) do
+    for _, obj in ipairs(container:GetDescendants()) do
         if obj:IsA("BasePart") then
             for _, name in ipairs(TARGET_ITEMS) do
                 if string.find(obj.Name:lower(), name:lower(), 1, true) then
@@ -324,7 +336,7 @@ local function findNearestTargetItem()
             end
         end
     end
-    return nearest, minDist
+    return nearest
 end
 
 local function pressE()
@@ -356,6 +368,8 @@ end
 
 local flyConnection = nil
 local lastTargetName = nil
+local cachedTarget = nil
+local lastScanTime = 0
 
 local function startAutoFarm()
     if flyConnection then return end
@@ -367,8 +381,19 @@ local function startAutoFarm()
         local root = char:FindFirstChild("HumanoidRootPart")
         if not root then return end
 
-        local target, dist = findNearestTargetItem()
-        if not target then lastTargetName = nil; return end
+        local now = tick()
+        if now - lastScanTime > 0.5 or not cachedTarget or not cachedTarget.Parent then
+            cachedTarget = findNearestTargetItem()
+            lastScanTime = now
+        end
+
+        local target = cachedTarget
+        if not target then
+            lastTargetName = nil
+            return
+        end
+
+        local dist = (target.Position - root.Position).Magnitude
 
         if target.Name ~= lastTargetName then
             lastTargetName = target.Name
@@ -378,6 +403,8 @@ local function startAutoFarm()
         if dist <= State.PickupRange then
             root.AssemblyLinearVelocity = Vector3.zero
             pressE()
+            cachedTarget = nil
+            lastScanTime = 0
             return
         end
 
@@ -398,6 +425,8 @@ local function stopAutoFarm()
         flyConnection = nil
     end
     lastTargetName = nil
+    cachedTarget = nil
+    lastScanTime = 0
     local char = LocalPlayer.Character
     if char then
         local root = char:FindFirstChild("HumanoidRootPart")
@@ -406,7 +435,7 @@ local function stopAutoFarm()
 end
 
 -- ============================================================
--- ========== 11. ОБРАБОТКА РЕСПАВНА ==========================
+-- ========== 12. ОБРАБОТКА РЕСПАВНА ==========================
 -- ============================================================
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
@@ -415,7 +444,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ============================================================
--- ========== 12. ОСНОВНЫЕ ЦИКЛЫ ==============================
+-- ========== 13. ОСНОВНЫЕ ЦИКЛЫ ==============================
 -- ============================================================
 task.spawn(function()
     while task.wait(State.ScanInterval) do
@@ -441,10 +470,10 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- ========== 13. СОЗДАНИЕ GUI С KAVO UI ======================
+-- ========== 14. СОЗДАНИЕ GUI С KAVO UI ======================
 -- ============================================================
 
-local Window = Library.CreateLib("YBA Controller | by You", "BloodTheme")
+local Window = Library.CreateLib("YBA Controller | Optimized", "BloodTheme")
 
 -- ----- Вкладка "AutoFarm" -----
 local FarmTab = Window:NewTab("AutoFarm")
@@ -473,7 +502,7 @@ FarmSection:NewToggle("Авто-покупка Lucky Arrow", "Покупать L
     State.AutoBuyLucky = state
 end)
 
-FarmSection:NewSlider("Скорость полёта", "Скорость перемещения в AutoFarm", 300, 30, function(value)
+FarmSection:NewSlider("Скорость полёта", "Скорость перемещения в AutoFarm", 200, 30, function(value)
     State.FlySpeed = value
 end)
 
@@ -485,7 +514,7 @@ end)
 local VisualTab = Window:NewTab("Visuals")
 local VisualSection = VisualTab:NewSection("ESP")
 
-VisualSection:NewToggle("ESP предметов", "Подсвечивать предметы из списка TARGET_ITEMS", function(state)
+VisualSection:NewToggle("ESP предметов", "Подсвечивать предметы из списка", function(state)
     State.ESP = state
     if not state then clearAllESP() end
 end)
@@ -522,7 +551,7 @@ local allItems = {
     "Ancient Scroll", "Diamond", "Dio's Diary", "Gold Coin",
     "Lucky Stone Mask", "Mysterious Arrow", "Pure Rokakaka",
     "Quinton's Glove", "Rib Cage of The Saint's Corpse",
-    "Steel Ball", "Stone Mask", "Zepellin's Headband", "Zeppeli's Hat",
+    "Steel Ball", "Stone Mask", "Zeppeli's Hat",
 }
 
 ItemsSection:NewDropdown("Добавить предмет в поиск", "Выберите предмет из списка", allItems, function(selected)
@@ -548,9 +577,10 @@ end)
 local InfoTab = Window:NewTab("Info")
 local InfoSection = InfoTab:NewSection("О скрипте")
 
-InfoSection:NewLabel("YBA Controller v2.0")
-InfoSection:NewLabel("Исполнитель: Xeno / Delta / Solara")
-InfoSection:NewLabel("Статус: ESP активен, AutoFarm доступен")
-InfoSection:NewLabel("Внимание: использование читов может привести к бану!")
+InfoSection:NewLabel("YBA Controller v2.1 (Optimized)")
+InfoSection:NewLabel("Удалён: Zepellin's Headband")
+InfoSection:NewLabel("ESP: сканирование раз в 5 сек")
+InfoSection:NewLabel("AutoFarm: кэширование цели раз в 0.5 сек")
+InfoSection:NewLabel("Внимание: читы могут привести к бану!")
 
-print("[YBA Controller] GUI загружен. Используйте вкладки для настройки.")
+print("[YBA Controller] Оптимизированная версия загружена. Zepellin's Headband удалён.")
