@@ -1,7 +1,7 @@
 -- ============================================================
--- YBA Controller v8.1 (Kavo UI + Auto-Equip & Sell All)
+-- YBA Controller v8.2 (Kavo UI + Ancient Scroll Debug)
 -- ============================================================
-print("[YBA Controller] Загрузка v8.1...")
+print("[YBA Controller] Загрузка v8.2...")
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
 
 -- ============================================================
@@ -257,7 +257,6 @@ local function flyToMerchant(merchant)
     return false
 end
 
--- Клик по кнопке (4 способа)
 local function clickButton(btn)
     if not btn then return false end
     local absPos = btn.AbsolutePosition
@@ -329,7 +328,6 @@ local function findButtonByText(searchText)
     return nil
 end
 
--- НОВАЯ ФУНКЦИЯ: экипировать Tool из Backpack
 local function equipTool(tool)
     local char = LocalPlayer.Character
     if not char then return false end
@@ -341,7 +339,6 @@ local function equipTool(tool)
     return ok
 end
 
--- ПЕРЕПИСАННАЯ autoSellItems: цикл по всем предметам
 local lastSell = 0
 local isSelling = false
 
@@ -370,7 +367,6 @@ local function autoSellItems(force)
     end
     task.wait(0.5)
 
-    -- Считаем исходное количество предметов
     local bp = LocalPlayer:FindFirstChild("Backpack")
     if not bp then 
         State.Busy = false; isSelling = false; return 
@@ -389,7 +385,6 @@ local function autoSellItems(force)
     while iteration < maxIterations do
         iteration = iteration + 1
         
-        -- Ищем следующий Tool в Backpack
         local tool = nil
         for _, item in ipairs(bp:GetChildren()) do
             if item:IsA("Tool") then 
@@ -403,16 +398,13 @@ local function autoSellItems(force)
             break
         end
         
-        -- 1. Экипируем предмет
         print("[AutoSell] #" .. iteration .. " Экипирую: " .. tool.Name)
         equipTool(tool)
         task.wait(0.8)
         
-        -- 2. Открываем диалог с торговцем
         pcall(function() fireproximityprompt(prompt) end)
         task.wait(2.0)
         
-        -- 3. Этап 1: "I'd like to sell this..."
         local stage1Done = false
         for attempt = 1, 3 do
             local btn = findButtonByText("i'd like to sell")
@@ -440,7 +432,6 @@ local function autoSellItems(force)
         else
             task.wait(1.0)
             
-            -- 4. Этап 2: "I'll sell ALL of these."
             local stage2Done = false
             for attempt = 1, 3 do
                 local btn = findButtonByText("sell all")
@@ -582,7 +573,7 @@ end)
 -- ============================================================
 -- 9. KAVO UI
 -- ============================================================
-local Window = Library.CreateLib("YBA Controller | v8.1", "BloodTheme")
+local Window = Library.CreateLib("YBA Controller | v8.2", "BloodTheme")
 
 local FarmTab = Window:NewTab("AutoFarm")
 local FarmSec = FarmTab:NewSection("Автоматизация")
@@ -599,7 +590,7 @@ end)
 
 FarmSec:NewToggle("Авто-продажа", "Экипирует и продаёт все предметы по очереди", function(v)
     State.AutoSell = v
-    if v then print("[AutoSell] Включено. Будут проданы все предметы из Backpack.") end
+    if v then print("[AutoSell] Включено.") end
 end)
 
 FarmSec:NewToggle("Авто-покупка Lucky Arrow", "Покупать при балансе $" .. LUCKY_ARROW_PRICE .. "+", function(v)
@@ -682,12 +673,71 @@ ItemsSec:NewButton("Debug: Показать ВИДИМЫЕ кнопки", "От�
     print("======================")
 end)
 
+-- НОВАЯ КНОПКА: Поиск Ancient Scroll
+ItemsSec:NewButton("📜 Debug: Найти Ancient Scroll", "Ищет любой предмет с 'scroll' или 'ancient' в имени", function()
+    print("=== ПОИСК ANCIENT SCROLL ===")
+    local found = false
+    
+    -- 1. Ищем в Item_Spawns.Items
+    local folder = Workspace:FindFirstChild("Item_Spawns")
+    if folder then
+        local items = folder:FindFirstChild("Items")
+        if items then
+            for _, model in ipairs(items:GetChildren()) do
+                local prompt = model:FindFirstChildOfClass("ProximityPrompt")
+                if prompt then
+                    local txt = (prompt.ObjectText or ""):lower()
+                    local modelName = model.Name:lower()
+                    if txt:find("scroll") or txt:find("ancient") or modelName:find("scroll") or modelName:find("ancient") then
+                        print("  НАЙДЕНО в Item_Spawns.Items:")
+                        print("    Model.Name = [" .. model.Name .. "]")
+                        print("    ObjectText = [" .. prompt.ObjectText .. "]")
+                        print("    ActionText = [" .. prompt.ActionText .. "]")
+                        found = true
+                    end
+                end
+            end
+        end
+    end
+    
+    -- 2. Ищем в ReplicatedStorage.Tool_Replicas
+    local rs = game:GetService("ReplicatedStorage")
+    local replicas = rs:FindFirstChild("Tool_Replicas")
+    if replicas then
+        print("  --- Tool_Replicas ---")
+        for _, tool in ipairs(replicas:GetChildren()) do
+            local name = tool.Name:lower()
+            if name:find("scroll") or name:find("ancient") then
+                print("    Найден Tool: [" .. tool.Name .. "]")
+                found = true
+            end
+        end
+    end
+    
+    -- 3. Ищем во всём Workspace
+    print("  --- Поиск во всём Workspace ---")
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") then
+            local txt = (obj.ObjectText or ""):lower()
+            if txt:find("scroll") or txt:find("ancient") then
+                print("    Найден Prompt: ObjectText=[" .. obj.ObjectText .. "] | Родитель=" .. obj.Parent.Name)
+                found = true
+            end
+        end
+    end
+    
+    if not found then
+        print("  НИЧЕГО НЕ НАЙДЕНО. Ancient Scroll сейчас нет на карте.")
+    end
+    print("=== КОНЕЦ ПОИСКА ===")
+end)
+
 local InfoTab = Window:NewTab("Info")
 local InfoSec = InfoTab:NewSection("О скрипте")
-InfoSec:NewLabel("YBA Controller v8.1")
+InfoSec:NewLabel("YBA Controller v8.2")
 InfoSec:NewLabel("AutoSell: экипирует и продаёт ВСЕ предметы")
-InfoSec:NewLabel("Цикл: экипировка → продажа → следующий")
-InfoSec:NewLabel("Продажа ~3-4 сек на предмет")
+InfoSec:NewLabel("Добавлен Debug для Ancient Scroll")
+InfoSec:NewLabel("Кнопка '📜 Debug: Найти Ancient Scroll'")
 InfoSec:NewLabel("Внимание: читы могут привести к бану!")
 
-print("[YBA Controller] v8.1 загружена. Полная продажа всех предметов активна.")
+print("[YBA Controller] v8.2 загружена. Debug для Ancient Scroll активен.")
