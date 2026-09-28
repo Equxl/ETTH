@@ -156,7 +156,8 @@ local function scanForItems()
     for _, obj in ipairs(container:GetDescendants()) do
         if obj:IsA("BasePart") then
             for _, itemName in ipairs(TARGET_ITEMS) do
-                if string.find(obj.Name:lower(), itemName:lower(), 1, true) then
+                -- ИЗМЕНЕНО: точное совпадение вместо поиска подстроки
+                if obj.Name:lower() == itemName:lower() then
                     createESP(obj)
                     break
                 end
@@ -277,7 +278,8 @@ local function autoSellFromBackpack()
 
     for _, item in ipairs(backpack:GetChildren()) do
         for _, targetName in ipairs(TARGET_ITEMS) do
-            if string.find(item.Name:lower(), targetName:lower(), 1, true) then
+            -- ИЗМЕНЕНО: точное совпадение
+            if item.Name:lower() == targetName:lower() then
                 sellItem(item)
                 break
             end
@@ -326,7 +328,8 @@ local function findNearestTargetItem()
     for _, obj in ipairs(container:GetDescendants()) do
         if obj:IsA("BasePart") then
             for _, name in ipairs(TARGET_ITEMS) do
-                if string.find(obj.Name:lower(), name:lower(), 1, true) then
+                -- ИЗМЕНЕНО: точное совпадение
+                if obj.Name:lower() == name:lower() then
                     local dist = (obj.Position - root.Position).Magnitude
                     if dist < minDist then
                         nearest, minDist = obj, dist
@@ -577,10 +580,9 @@ end)
 local InfoTab = Window:NewTab("Info")
 local InfoSection = InfoTab:NewSection("О скрипте")
 
-InfoSection:NewLabel("YBA Controller v2.1 (Optimized)")
-InfoSection:NewLabel("Удалён: Zepellin's Headband")
-InfoSection:NewLabel("ESP: сканирование раз в 5 сек")
-InfoSection:NewLabel("AutoFarm: кэширование цели раз в 0.5 сек")
+InfoSection:NewLabel("YBA Controller v2.2 (Exact Match)")
+InfoSection:NewLabel("Исправлены ложные срабатывания ESP")
+InfoSection:NewLabel("Теперь скрипт ищет точное имя предмета")
 InfoSection:NewLabel("Внимание: читы могут привести к бану!")
 
-print("[YBA Controller] Оптимизированная версия загружена. Zepellin's Headband удалён.")
+print("[YBA Controller] Оптимизированная версия загружена. Ложные срабатывания исправлены.")
