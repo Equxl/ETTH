@@ -1,11 +1,12 @@
 -- ============================================================
--- YBA Controller v6.1 (ESP + AutoFarm + AutoSell)
+-- ========== 1. ЗАГРУЗКА KAVO UI =============================
 -- ============================================================
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
+print("[YBA Controller] Загрузка v7.0 (Kavo UI)...")
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
 
+-- ============================================================
+-- ========== 2. НАСТРОЙКИ И СОСТОЯНИЕ ========================
+-- ============================================================
 local TARGET_ITEMS = {
     "Rokakaka", "Lucky Arrow", "Caesar's Headband", "Clackers",
     "Ancient Scroll", "Diamond", "Dio's Diary", "Gold Coin",
@@ -14,19 +15,30 @@ local TARGET_ITEMS = {
     "Steel Ball", "Stone Mask", "Zeppeli's Hat",
 }
 
+local LUCKY_ARROW_PRICE = 75000
+
 local State = {
     ESP = true,
     AutoFarm = false,
     AutoSell = false,
     Noclip = false,
     Speed = false,
+    AutoBuyLucky = false,
     FlySpeed = 80,
     PickupRange = 5,
     WalkSpeed = 30,
 }
 
 -- ============================================================
--- ESP
+-- ========== 3. СЕРВИСЫ ======================================
+-- ============================================================
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ============================================================
+-- ========== 4. ESP ==========================================
 -- ============================================================
 local espObjects = {}
 
@@ -59,7 +71,6 @@ local function clearAllESP()
     espObjects = {}
 end
 
--- Функция поиска валидных предметов (игнорируем фантомы в Workspace)
 local function getValidItems()
     local validItems = {}
     local itemsFolder = Workspace:FindFirstChild("Item_Spawns")
@@ -73,7 +84,6 @@ local function getValidItems()
             if prompt and prompt.ActionText == "Pick Up" then
                 local itemName = prompt.ObjectText
                 local mesh = model:FindFirstChildOfClass("MeshPart") or model:FindFirstChildOfClass("BasePart")
-                -- Проверяем, что предмет не прозрачный (не фантом)
                 if mesh and mesh.Transparency < 1 then
                     table.insert(validItems, {model = model, prompt = prompt, mesh = mesh, name = itemName})
                 end
@@ -106,7 +116,7 @@ local function cleanupESP()
 end
 
 -- ============================================================
--- AUTOFARM
+-- ========== 5. AUTOFARM =====================================
 -- ============================================================
 local function findNearestItem()
     local char = LocalPlayer.Character
@@ -188,36 +198,29 @@ local function stopAutoFarm()
 end
 
 -- ============================================================
--- AUTOSELL (НОВОЕ!)
+-- ========== 6. AUTOSELL =====================================
 -- ============================================================
 local function autoSellItems()
     if not State.AutoSell then return end
 
-    -- 1. Проверяем, есть ли предметы в инвентаре (Backpack)
     local backpack = LocalPlayer:FindFirstChild("Backpack")
     local hasItems = false
     if backpack then
         for _, item in ipairs(backpack:GetChildren()) do
-            if item:IsA("Tool") then -- В YBA предметы в инвентаре - это Tool
-                hasItems = true
-                break
-            end
+            if item:IsA("Tool") then hasItems = true; break end
         end
     end
-    if not hasItems then return end -- Если нечего продавать, выходим
+    if not hasItems then return end
 
-    -- 2. Ищем кнопку "I'll sell ALL of these." в интерфейсе
     local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
     for _, gui in ipairs(playerGui:GetChildren()) do
         for _, obj in ipairs(gui:GetDescendants()) do
             if obj:IsA("TextButton") and obj.Text then
                 local btnText = obj.Text:lower()
-                -- Ищем кнопку, где есть слова "sell" и "all"
                 if btnText:find("sell") and btnText:find("all") then
-                    -- Нажимаем на кнопку
                     obj:Fire("MouseButton1Click")
-                    print("[AutoSell] Нажал кнопку продажи: " .. obj.Text)
-                    task.wait(1) -- Задержка, чтобы сервер успел обработать
+                    print("[AutoSell] Нажал кнопку: " .. obj.Text)
+                    task.wait(1)
                     return
                 end
             end
@@ -226,7 +229,76 @@ local function autoSellItems()
 end
 
 -- ============================================================
--- NOCLIP & SPEED
+-- ========== 7. АВТОПОКУПКА LUCKY ARROW ======================
+-- ============================================================
+local function getPlayerMoney()
+    local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+    if leaderstats then
+        local cash = leaderstats:FindFirstChild("Cash") or leaderstats:FindFirstChild("Money")
+        if cash and cash:IsA("IntValue") then return cash.Value end
+    end
+    local attr = LocalPlayer:GetAttribute("Money") or LocalPlayer:GetAttribute("Cash")
+    if typeof(attr) == "number" then return attr end
+    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if playerGui then
+        local currency = playerGui:FindFirstChild("Currency")
+        if currency then
+            local moneyLabel = currency:FindFirstChild("Money")
+            if moneyLabel and moneyLabel:IsA("TextLabel") then
+                local num = tonumber(moneyLabel.Text:gsub("[^%d]", ""))
+                if num then return num end
+            end
+        end
+    end
+    return nil
+end
+
+local function findSellRemote()
+    local plr = LocalPlayer
+    if plr and plr.Character then
+        for _, obj in pairs(plr.Character:GetChildren()) do
+            if obj:IsA("RemoteEvent") then return obj end
+        end
+    end
+    local places = { Workspace, game:GetService("ReplicatedStorage") }
+    for _, place in pairs(places) do
+        if place then
+            for _, obj in pairs(place:GetDescendants()) do
+                if obj:IsA("RemoteEvent") then
+                    local n = obj.Name:lower()
+                    if n:find("remote") or n:find("sell") or n:find("server") then
+                        return obj
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function buyLuckyArrow()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    local money = getPlayerMoney()
+    if money == nil or money < LUCKY_ARROW_PRICE then return false end
+
+    local remote = char:FindFirstChild("RemoteEvent") or findSellRemote()
+    if not remote then return false end
+
+    local args = {
+        "PurchaseShopItem",
+        {["ItemName"] = "Lucky Arrow"},
+        1, 2
+    }
+    local success = pcall(function() remote:FireServer(unpack(args)) end)
+    if success then
+        print(string.format("[AutoBuy] Куплен Lucky Arrow. Баланс: $%d", money))
+    end
+    return success
+end
+
+-- ============================================================
+-- ========== 8. NOCLIP & SPEED ===============================
 -- ============================================================
 local noclipConnection = nil
 local function applyNoclip()
@@ -262,7 +334,7 @@ local function applySpeed()
 end
 
 -- ============================================================
--- ЦИКЛЫ
+-- ========== 9. ЦИКЛЫ ========================================
 -- ============================================================
 task.spawn(function()
     while task.wait(3) do
@@ -271,41 +343,33 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while task.wait(2) do -- Проверка автопродажи каждые 2 секунды
-        pcall(autoSellItems)
+    while task.wait(2) do pcall(autoSellItems) end
+end)
+
+task.spawn(function()
+    while task.wait(5) do
+        if State.AutoBuyLucky then pcall(buyLuckyArrow) end
     end
 end)
 
--- ============================================================
--- ПРОСТОЙ GUI
--- ============================================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-local function createBtn(text, y, color, callback)
-    local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 180, 0, 36)
-    btn.Position = UDim2.new(0, 20, 0, y)
-    btn.BackgroundColor3 = color
-    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    btn.Text = text
-    btn.Font = Enum.Font.SourceSansBold
-    btn.TextSize = 14
-    btn.Parent = ScreenGui
-    btn.MouseButton1Click:Connect(callback)
-    return btn
-end
-
-local btnESP = createBtn("ESP: ВКЛ", 100, Color3.fromRGB(40, 40, 55), function()
-    State.ESP = not State.ESP
-    btnESP.Text = "ESP: " .. (State.ESP and "ВКЛ" or "ВЫКЛ")
-    if not State.ESP then clearAllESP() end
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if State.Noclip then applyNoclip() end
+    if State.Speed then applySpeed() end
 end)
 
-local btnFarm = createBtn("AutoFarm: ВЫКЛ", 140, Color3.fromRGB(60, 40, 40), function()
-    State.AutoFarm = not State.AutoFarm
-    btnFarm.Text = "AutoFarm: " .. (State.AutoFarm and "ВКЛ" or "ВЫКЛ")
-    if State.AutoFarm then
+-- ============================================================
+-- ========== 10. KAVO UI =====================================
+-- ============================================================
+local Window = Library.CreateLib("YBA Controller | v7.0", "BloodTheme")
+
+-- ----- Вкладка "AutoFarm" -----
+local FarmTab = Window:NewTab("AutoFarm")
+local FarmSection = FarmTab:NewSection("Автоматизация")
+
+FarmSection:NewToggle("★ AutoFarm", "Автоматический поиск и подбор предметов", function(v)
+    State.AutoFarm = v
+    if v then
         if not State.Noclip then State.Noclip = true; startNoclip() end
         startAutoFarm()
     else
@@ -313,21 +377,89 @@ local btnFarm = createBtn("AutoFarm: ВЫКЛ", 140, Color3.fromRGB(60, 40, 40),
     end
 end)
 
-local btnSell = createBtn("AutoSell: ВЫКЛ", 180, Color3.fromRGB(40, 60, 40), function()
-    State.AutoSell = not State.AutoSell
-    btnSell.Text = "AutoSell: " .. (State.AutoSell and "ВКЛ" or "ВЫКЛ")
+FarmSection:NewToggle("Авто-продажа", "Продавать предметы через кнопку 'I'll sell ALL of these'", function(v)
+    State.AutoSell = v
 end)
 
-local btnNoclip = createBtn("Noclip: ВЫКЛ", 220, Color3.fromRGB(40, 40, 60), function()
-    State.Noclip = not State.Noclip
-    btnNoclip.Text = "Noclip: " .. (State.Noclip and "ВКЛ" or "ВЫКЛ")
-    if State.Noclip then startNoclip() else stopNoclip() end
+FarmSection:NewToggle("Авто-покупка Lucky Arrow", "Покупать при балансе $" .. LUCKY_ARROW_PRICE .. "+", function(v)
+    State.AutoBuyLucky = v
 end)
 
-local btnSpeed = createBtn("Speed: ВЫКЛ", 260, Color3.fromRGB(60, 40, 60), function()
-    State.Speed = not State.Speed
-    btnSpeed.Text = "Speed: " .. (State.Speed and "ВКЛ" or "ВЫКЛ")
+FarmSection:NewSlider("Скорость полёта", "Скорость перемещения в AutoFarm", 200, 30, function(v)
+    State.FlySpeed = v
+end)
+
+FarmSection:NewSlider("Дистанция подбора", "На каком расстоянии подбирать", 10, 1, function(v)
+    State.PickupRange = v
+end)
+
+-- ----- Вкладка "Visuals" -----
+local VisualTab = Window:NewTab("Visuals")
+local VisualSection = VisualTab:NewSection("ESP")
+
+VisualSection:NewToggle("ESP предметов", "Подсвечивать предметы из списка", function(v)
+    State.ESP = v
+    if not v then clearAllESP() end
+end)
+
+-- ----- Вкладка "Movement" -----
+local MoveTab = Window:NewTab("Movement")
+local MoveSection = MoveTab:NewSection("Скорость и коллизии")
+
+MoveSection:NewToggle("Noclip", "Проход сквозь стены", function(v)
+    State.Noclip = v
+    if v then startNoclip() else stopNoclip() end
+end)
+
+MoveSection:NewToggle("Ускорение", "Увеличить скорость ходьбы", function(v)
+    State.Speed = v
     applySpeed()
 end)
 
-print("[YBA v6.1] Запущен. ESP, AutoFarm и AutoSell готовы.")
+MoveSection:NewSlider("Скорость ходьбы", "Значение WalkSpeed", 150, 16, function(v)
+    State.WalkSpeed = v
+    if State.Speed then applySpeed() end
+end)
+
+-- ----- Вкладка "Items" -----
+local ItemsTab = Window:NewTab("Items")
+local ItemsSection = ItemsTab:NewSection("Выбор предметов для поиска")
+
+local allItems = {
+    "Rokakaka", "Lucky Arrow", "Caesar's Headband", "Clackers",
+    "Ancient Scroll", "Diamond", "Dio's Diary", "Gold Coin",
+    "Lucky Stone Mask", "Mysterious Arrow", "Pure Rokakaka",
+    "Quinton's Glove", "Rib Cage of The Saint's Corpse",
+    "Steel Ball", "Stone Mask", "Zeppeli's Hat",
+}
+
+ItemsSection:NewDropdown("Добавить предмет", "Добавить в TARGET_ITEMS", allItems, function(selected)
+    local exists = false
+    for _, item in ipairs(TARGET_ITEMS) do
+        if item:lower() == selected:lower() then exists = true; break end
+    end
+    if not exists then
+        table.insert(TARGET_ITEMS, selected)
+        print("[YBA] Добавлен: " .. selected)
+    else
+        print("[YBA] Уже в списке: " .. selected)
+    end
+end)
+
+ItemsSection:NewButton("Очистить список", "Удалить все предметы", function()
+    table.clear(TARGET_ITEMS)
+    clearAllESP()
+    print("[YBA] Список очищен")
+end)
+
+-- ----- Вкладка "Info" -----
+local InfoTab = Window:NewTab("Info")
+local InfoSection = InfoTab:NewSection("О скрипте")
+
+InfoSection:NewLabel("YBA Controller v7.0 (Kavo UI)")
+InfoSection:NewLabel("ESP ищет предметы в Item_Spawns.Items")
+InfoSection:NewLabel("AutoFarm использует fireproximityprompt")
+InfoSection:NewLabel("AutoSell нажимает 'I'll sell ALL of these'")
+InfoSection:NewLabel("Внимание: читы могут привести к бану!")
+
+print("[YBA Controller] v7.0 загружена. Kavo UI активен.")
