@@ -1,19 +1,21 @@
 -- ============================================================
--- YBA SIMPLE HOOK v4
--- Ловит все вызовы FireServer и InvokeServer
+-- YBA HARD HOOK
+-- Перехватывает FireServer у всех RemoteEvent напрямую
 -- ============================================================
-print("[HOOK] Запуск...")
+print("[HOOK] Запуск жесткого хука...")
 
-local mt = getrawmetatable(game)
-local oldNamecall = mt.__namecall
-setreadonly(mt, false)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
+local function hookRemote(remote)
+    if not remote or not remote:IsA("RemoteEvent") then return end
+    local oldFireServer = remote.FireServer
+    if not oldFireServer then return end
     
-    -- Ловим только вызовы сервера
-    if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
-        print("[HOOK] >>> " .. method .. " на: " .. self:GetFullName())
+    hookfunction(oldFireServer, function(self, ...)
+        print("[HOOK] >>> FireServer: " .. self:GetFullName())
         local args = {...}
         for i, v in ipairs(args) do
             if type(v) == "table" then
@@ -25,11 +27,19 @@ mt.__namecall = newcclosure(function(self, ...)
                 print("[HOOK]    Аргумент " .. i .. ": " .. tostring(v))
             end
         end
-        print("[HOOK] ------------------------------")
-    end
-    
-    return oldNamecall(self, ...)
-end)
+        print("[HOOK] ------------------------")
+        return oldFireServer(self, ...)
+    end)
+end
 
-setreadonly(mt, true)
-print("[HOOK] Готово. ТЕПЕРЬ продайте предмет торговцу вручную и смотрите логи [HOOK] в консоли (F9).")
+-- Проходим по всем объектам в игре
+local count = 0
+for _, obj in ipairs(game:GetDescendants()) do
+    if obj:IsA("RemoteEvent") then
+        hookRemote(obj)
+        count = count + 1
+    end
+end
+
+print("[HOOK] Установлено хуков на RemoteEvent: " .. count)
+print("[HOOK] ТЕПЕРЬ продайте предмет торговцу вручную!")
