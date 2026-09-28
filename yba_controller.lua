@@ -1,6 +1,7 @@
 -- ============================================================
 -- ========== 1. ЗАГРУЗКА KAVO UI =============================
 -- ============================================================
+print("[YBA Controller] Загрузка v3.0 (Filtered)...")
 local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/xHeptc/Kavo-UI-Library/main/source.lua"))()
 
 -- ============================================================
@@ -57,7 +58,29 @@ pcall(function()
 end)
 
 -- ============================================================
--- ========== 4. ПРОВЕРКА БАЛАНСА =============================
+-- ========== 4. ФИЛЬТР ПРЕДМЕТОВ (ВАЖНО!) ====================
+-- ============================================================
+-- Проверяет, является ли объект реальным предметом для подбора
+local function isValidItem(obj)
+    if not obj then return false end
+
+    -- Если это Tool (например, предмет в инвентаре или на земле)
+    if obj:IsA("Tool") then return true end
+
+    -- Если это часть (BasePart)
+    if obj:IsA("BasePart") then
+        -- Карта обычно Anchored = true, предметы — нет
+        if obj.Anchored then return false end
+        -- У предметов для подбора всегда есть ProximityPrompt
+        if not obj:FindFirstChildOfClass("ProximityPrompt") then return false end
+        return true
+    end
+
+    return false
+end
+
+-- ============================================================
+-- ========== 5. ПРОВЕРКА БАЛАНСА =============================
 -- ============================================================
 local function getPlayerMoney()
     local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
@@ -95,7 +118,7 @@ local function getPlayerMoney()
 end
 
 -- ============================================================
--- ========== 5. ПОИСК ПАПКИ С ПРЕДМЕТАМИ =====================
+-- ========== 6. ПОИСК ПАПКИ С ПРЕДМЕТАМИ =====================
 -- ============================================================
 local function getItemContainer()
     for _, name in ipairs(ITEM_FOLDERS) do
@@ -106,7 +129,7 @@ local function getItemContainer()
 end
 
 -- ============================================================
--- ========== 6. ESP ==========================================
+-- ========== 7. ESP ==========================================
 -- ============================================================
 local espObjects = {}
 
@@ -154,9 +177,8 @@ local function scanForItems()
     local container = getItemContainer() or Workspace
 
     for _, obj in ipairs(container:GetDescendants()) do
-        if obj:IsA("BasePart") then
+        if isValidItem(obj) then -- Используем фильтр
             for _, itemName in ipairs(TARGET_ITEMS) do
-                -- ИЗМЕНЕНО: точное совпадение вместо поиска подстроки
                 if obj.Name:lower() == itemName:lower() then
                     createESP(obj)
                     break
@@ -175,7 +197,7 @@ local function cleanupESP()
 end
 
 -- ============================================================
--- ========== 7. NOCLIP =======================================
+-- ========== 8. NOCLIP =======================================
 -- ============================================================
 local noclipConnection = nil
 
@@ -210,7 +232,7 @@ local function stopNoclip()
 end
 
 -- ============================================================
--- ========== 8. SPEED ========================================
+-- ========== 9. SPEED ========================================
 -- ============================================================
 local function applySpeed()
     local char = LocalPlayer.Character
@@ -222,7 +244,7 @@ local function applySpeed()
 end
 
 -- ============================================================
--- ========== 9. ПРОДАЖА ======================================
+-- ========== 10. ПРОДАЖА =====================================
 -- ============================================================
 local function findSellRemote()
     local plr = LocalPlayer
@@ -278,7 +300,6 @@ local function autoSellFromBackpack()
 
     for _, item in ipairs(backpack:GetChildren()) do
         for _, targetName in ipairs(TARGET_ITEMS) do
-            -- ИЗМЕНЕНО: точное совпадение
             if item.Name:lower() == targetName:lower() then
                 sellItem(item)
                 break
@@ -288,7 +309,7 @@ local function autoSellFromBackpack()
 end
 
 -- ============================================================
--- ========== 10. АВТОПОКУПКА LUCKY ARROW =====================
+-- ========== 11. АВТОПОКУПКА LUCKY ARROW =====================
 -- ============================================================
 local function buyLuckyArrow()
     local char = LocalPlayer.Character
@@ -315,7 +336,7 @@ local function buyLuckyArrow()
 end
 
 -- ============================================================
--- ========== 11. AUTOFARM (ОПТИМИЗИРОВАННЫЙ) =================
+-- ========== 12. AUTOFARM ====================================
 -- ============================================================
 local function findNearestTargetItem()
     local char = LocalPlayer.Character
@@ -326,9 +347,8 @@ local function findNearestTargetItem()
     local container = getItemContainer() or Workspace
     local nearest, minDist = nil, math.huge
     for _, obj in ipairs(container:GetDescendants()) do
-        if obj:IsA("BasePart") then
+        if isValidItem(obj) then -- Используем фильтр
             for _, name in ipairs(TARGET_ITEMS) do
-                -- ИЗМЕНЕНО: точное совпадение
                 if obj.Name:lower() == name:lower() then
                     local dist = (obj.Position - root.Position).Magnitude
                     if dist < minDist then
@@ -438,7 +458,7 @@ local function stopAutoFarm()
 end
 
 -- ============================================================
--- ========== 12. ОБРАБОТКА РЕСПАВНА ==========================
+-- ========== 13. ОБРАБОТКА РЕСПАВНА ==========================
 -- ============================================================
 LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
@@ -447,7 +467,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 end)
 
 -- ============================================================
--- ========== 13. ОСНОВНЫЕ ЦИКЛЫ ==============================
+-- ========== 14. ОСНОВНЫЕ ЦИКЛЫ ==============================
 -- ============================================================
 task.spawn(function()
     while task.wait(State.ScanInterval) do
@@ -473,10 +493,10 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- ========== 14. СОЗДАНИЕ GUI С KAVO UI ======================
+-- ========== 15. СОЗДАНИЕ GUI С KAVO UI ======================
 -- ============================================================
 
-local Window = Library.CreateLib("YBA Controller | Optimized", "BloodTheme")
+local Window = Library.CreateLib("YBA Controller | v3.0", "BloodTheme")
 
 -- ----- Вкладка "AutoFarm" -----
 local FarmTab = Window:NewTab("AutoFarm")
@@ -580,9 +600,9 @@ end)
 local InfoTab = Window:NewTab("Info")
 local InfoSection = InfoTab:NewSection("О скрипте")
 
-InfoSection:NewLabel("YBA Controller v2.2 (Exact Match)")
-InfoSection:NewLabel("Исправлены ложные срабатывания ESP")
-InfoSection:NewLabel("Теперь скрипт ищет точное имя предмета")
+InfoSection:NewLabel("YBA Controller v3.0 (Filtered)")
+InfoSection:NewLabel("Исправлен поиск: игнорируются объекты карты")
+InfoSection:NewLabel("Ищутся только объекты с ProximityPrompt")
 InfoSection:NewLabel("Внимание: читы могут привести к бану!")
 
-print("[YBA Controller] Оптимизированная версия загружена. Ложные срабатывания исправлены.")
+print("[YBA Controller] v3.0 загружена. Фильтр предметов активен.")
