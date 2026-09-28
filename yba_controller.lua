@@ -1,21 +1,17 @@
 -- ============================================================
--- YBA HARD HOOK
--- Перехватывает FireServer у всех RemoteEvent напрямую
+-- YBA HOOK v6 (__namecall)
 -- ============================================================
-print("[HOOK] Запуск жесткого хука...")
+print("[HOOK] Запуск v6...")
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+local mt = getrawmetatable(game)
+local oldNamecall = mt.__namecall
+setreadonly(mt, false)
 
-local function hookRemote(remote)
-    if not remote or not remote:IsA("RemoteEvent") then return end
-    local oldFireServer = remote.FireServer
-    if not oldFireServer then return end
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
     
-    hookfunction(oldFireServer, function(self, ...)
-        print("[HOOK] >>> FireServer: " .. self:GetFullName())
+    if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
+        print("[HOOK] >>> " .. method .. " на: " .. self:GetFullName())
         local args = {...}
         for i, v in ipairs(args) do
             if type(v) == "table" then
@@ -28,18 +24,10 @@ local function hookRemote(remote)
             end
         end
         print("[HOOK] ------------------------")
-        return oldFireServer(self, ...)
-    end)
-end
-
--- Проходим по всем объектам в игре
-local count = 0
-for _, obj in ipairs(game:GetDescendants()) do
-    if obj:IsA("RemoteEvent") then
-        hookRemote(obj)
-        count = count + 1
     end
-end
+    
+    return oldNamecall(self, ...)
+end)
 
-print("[HOOK] Установлено хуков на RemoteEvent: " .. count)
-print("[HOOK] ТЕПЕРЬ продайте предмет торговцу вручную!")
+setreadonly(mt, true)
+print("[HOOK] Готово. ТЕПЕРЬ продайте предмет торговцу вручную и смотрите логи [HOOK]!")
