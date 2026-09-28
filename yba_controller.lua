@@ -1,33 +1,23 @@
 -- ============================================================
--- YBA HOOK v6 (__namecall)
+-- YBA PROXIMITY HOOK
 -- ============================================================
-print("[HOOK] Запуск v6...")
+print("[HOOK] Запуск хука ProximityPrompt...")
 
-local mt = getrawmetatable(game)
-local oldNamecall = mt.__namecall
-setreadonly(mt, false)
+local oldFireProximityPrompt = fireproximityprompt
 
-mt.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    
-    if (method == "FireServer" or method == "InvokeServer") and (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
-        print("[HOOK] >>> " .. method .. " на: " .. self:GetFullName())
-        local args = {...}
-        for i, v in ipairs(args) do
-            if type(v) == "table" then
-                print("[HOOK]    Аргумент " .. i .. " (таблица):")
-                for k, val in pairs(v) do
-                    print("[HOOK]       " .. tostring(k) .. " = " .. tostring(val))
-                end
-            else
-                print("[HOOK]    Аргумент " .. i .. ": " .. tostring(v))
-            end
+if oldFireProximityPrompt then
+    fireproximityprompt = function(prompt, ...)
+        if prompt and prompt:IsA("ProximityPrompt") then
+            print("[HOOK] >>> Вызван fireproximityprompt!")
+            print("[HOOK] Объект: " .. prompt:GetFullName())
+            print("[HOOK] ObjectText: " .. prompt.ObjectText)
+            print("[HOOK] ActionText: " .. prompt.ActionText)
+            print("[HOOK] Родитель: " .. tostring(prompt.Parent))
+            print("[HOOK] ------------------------")
         end
-        print("[HOOK] ------------------------")
+        return oldFireProximityPrompt(prompt, ...)
     end
-    
-    return oldNamecall(self, ...)
-end)
-
-setreadonly(mt, true)
-print("[HOOK] Готово. ТЕПЕРЬ продайте предмет торговцу вручную и смотрите логи [HOOK]!")
+    print("[HOOK] Хук установлен. ТЕПЕРЬ продайте предмет торговцу вручную!")
+else
+    print("[HOOK] Ошибка: fireproximityprompt недоступен в этом исполнителе.")
+end
