@@ -1,114 +1,96 @@
 -- ============================================================
--- YBA DEBUG v2. Логи помечены [DEBUG_YBA]
+-- YBA ESP v5.0 (ObjectText Fix)
 -- ============================================================
-print("[DEBUG_YBA] Запуск отладки v2...")
-
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
--- 1. Функция поиска предметов рядом
-local function showNearby()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local root = char:FindFirstChild("HumanoidRootPart")
-    if not root then return end
+-- Список предметов, которые ищем
+local TARGET_ITEMS = {
+    "Rokakaka", "Lucky Arrow", "Caesar's Headband", "Clackers",
+    "Ancient Scroll", "Diamond", "Dio's Diary", "Gold Coin",
+    "Lucky Stone Mask", "Mysterious Arrow", "Pure Rokakaka",
+    "Quinton's Glove", "Rib Cage of The Saint's Corpse",
+    "Steel Ball", "Stone Mask", "Zeppeli's Hat",
+}
 
-    print("[DEBUG_YBA] --- Объекты в радиусе 30 studs ---")
-    local count = 0
-    for _, obj in ipairs(game:GetService("Workspace"):GetDescendants()) do
-        if obj ~= char and (obj:IsA("BasePart") or obj:IsA("Model") or obj:IsA("Tool")) then
-            local pos = nil
-            if obj:IsA("BasePart") then pos = obj.Position
-            elseif obj:IsA("Model") and obj.PrimaryPart then pos = obj.PrimaryPart.Position
-            elseif obj:IsA("Tool") and obj:FindFirstChildWhichIsA("BasePart") then
-                pos = obj:FindFirstChildWhichIsA("BasePart").Position
-            end
-            
-            if pos and (pos - root.Position).Magnitude < 30 then
-                local parentName = obj.Parent and obj.Parent.Name or "nil"
-                print("[DEBUG_YBA] " .. obj.ClassName .. " | Имя: " .. obj.Name .. " | Родитель: " .. parentName)
-                count = count + 1
-            end
-        end
-    end
-    print("[DEBUG_YBA] Найдено объектов рядом: " .. count)
+local espObjects = {}
+
+local function createESP(part, itemName)
+    if not part or espObjects[part] then return end
+    
+    local billboard = Instance.new("BillboardGui")
+    billboard.Name = "YBA_ItemESP"
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Adornee = part
+    billboard.Parent = part
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Text = itemName
+    textLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+    textLabel.TextStrokeTransparency = 0
+    textLabel.TextScaled = true
+    textLabel.Font = Enum.Font.SourceSansBold
+    textLabel.Parent = billboard
+
+    espObjects[part] = billboard
 end
 
--- 2. Функция поиска RemoteEvent и RemoteFunction
-local function findRemotes()
-    print("[DEBUG_YBA] --- Поиск RemoteEvent и RemoteFunction ---")
-    local foundEvents = {}
-    local foundFuncs = {}
-    
-    local function scan(container, path)
-        for _, obj in ipairs(container:GetDescendants()) do
-            if obj:IsA("RemoteEvent") then
-                table.insert(foundEvents, obj)
-            elseif obj:IsA("RemoteFunction") then
-                table.insert(foundFuncs, obj)
-            end
-        end
+local function clearAllESP()
+    for _, gui in pairs(espObjects) do
+        if gui and gui.Parent then gui:Destroy() end
     end
-    
-    scan(game:GetService("ReplicatedStorage"), "ReplicatedStorage")
-    scan(game:GetService("Workspace"), "Workspace")
-    
-    local char = LocalPlayer.Character
-    if char then
-        for _, obj in ipairs(char:GetChildren()) do
-            if obj:IsA("RemoteEvent") then table.insert(foundEvents, obj) end
-            if obj:IsA("RemoteFunction") then table.insert(foundFuncs, obj) end
-        end
-    end
-    
-    print("[DEBUG_YBA] Найдено RemoteEvent: " .. #foundEvents)
-    print("[DEBUG_YBA] Найдено RemoteFunction: " .. #foundFuncs)
-    return foundEvents, foundFuncs
+    espObjects = {}
 end
 
--- 3. Хук на вызовы сервера
-local function hookCalls()
-    print("[DEBUG_YBA] --- Хук FireServer и InvokeServer ---")
-    print("[DEBUG_YBA] Теперь ВРУЧНУЮ продайте предмет торговцу!")
-    
-    local mt = getrawmetatable(game)
-    local oldNamecall = mt.__namecall
-    setreadonly(mt, false)
-    
-    mt.__namecall = newcclosure(function(self, ...)
-        local method = getnamecallmethod()
-        if (method == "FireServer" or method == "InvokeServer") and 
-           (self:IsA("RemoteEvent") or self:IsA("RemoteFunction")) then
-            local args = {...}
-            print("[DEBUG_YBA] >>> " .. method .. ": " .. self:GetFullName())
-            for i, v in ipairs(args) do
-                if type(v) == "table" then
-                    print("[DEBUG_YBA]    [" .. i .. "] table:")
-                    for k, val in pairs(v) do
-                        print("[DEBUG_YBA]       " .. tostring(k) .. " = " .. tostring(val))
+-- Новая функция сканирования: ищем Model внутри Item_Spawns.Items
+local function scanForItems()
+    local itemsFolder = Workspace:FindFirstChild("Item_Spawns")
+    if not itemsFolder then return end
+    local items = itemsFolder:FindFirstChild("Items")
+    if not items then return end
+
+    for _, model in ipairs(items:GetChildren()) do
+        if model:IsA("Model") then
+            -- Ищем ProximityPrompt внутри модели
+            local prompt = model:FindFirstChildOfClass("ProximityPrompt")
+            if prompt then
+                local itemName = prompt.ObjectText -- Берем имя из ObjectText!
+                for _, targetName in ipairs(TARGET_ITEMS) do
+                    if itemName:lower() == targetName:lower() then
+                        -- Находим MeshPart для прикрепления ESP
+                        local mesh = model:FindFirstChildOfClass("MeshPart")
+                        if mesh then
+                            createESP(mesh, itemName)
+                        end
+                        break
                     end
-                else
-                    print("[DEBUG_YBA]    [" .. i .. "] " .. tostring(v))
                 end
             end
         end
-        return oldNamecall(self, ...)
-    end)
-    
-    setreadonly(mt, true)
+    end
 end
 
--- Запуск
-findRemotes()
-hookCalls()
-task.wait(1)
-showNearby()
+local function cleanupESP()
+    for part, gui in pairs(espObjects) do
+        if not part or not part.Parent then
+            gui:Destroy()
+            espObjects[part] = nil
+        end
+    end
+end
 
--- Автоматический показ предметов каждые 3 секунды
+-- Цикл сканирования
 task.spawn(function()
     while task.wait(3) do
-        pcall(showNearby)
+        pcall(scanForItems)
+        pcall(cleanupESP)
     end
 end)
 
-print("[DEBUG_YBA] Готово. Ждите логов [DEBUG_YBA] в консоли.")
+print("[YBA ESP v5.0] Запущен. Ищем предметы по ObjectText.")
